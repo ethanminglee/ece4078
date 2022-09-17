@@ -1,43 +1,16 @@
-from os import stat
 import pygame
 import json
 import re
 import numpy as np
 import math
 
+from Obstacle import *
+from rrt import *
 
 class Game:
     '''
     Class for waypoint GUI and planning
     '''
-
-    class Node:
-        '''
-        Node for RRT
-        '''
-
-        def __init__(self, x, y):
-            self.x = x
-            self.y = y
-            self.path_x = []
-            self.path_y = []
-            self.parent = None
-
-
-    class Fruit:
-        '''
-        Class for fruit markers
-        '''
-        ...
-
-
-    class Marker:
-        '''
-        Class for Aruco markers
-        '''
-
-    
-
 
     def __init__(self, args):
         self.markers = None
@@ -47,6 +20,8 @@ class Game:
 
         self.marker_locs = []
         self.fruit_locs = []
+
+        self.fruit_r = 5
 
         if args.arena == 0:
             # sim dimensions
@@ -126,19 +101,19 @@ class Game:
             self.marker_locs.append((conv_x - scale_size/2, conv_y - scale_size/2))
         else:
             if fruit == 'apple':
-                pygame.draw.circle(self.canvas, (255,0,0), (conv_x, conv_y), 5)
+                pygame.draw.circle(self.canvas, (255,0,0), (conv_x, conv_y), self.fruit_r)
                 pygame.draw.circle(self.canvas, (255,0,0), (conv_x, conv_y), 5 * (self.scale_factor / 10), 1)
             elif fruit == 'lemon':
-                pygame.draw.circle(self.canvas, (255,255,0), (conv_x, conv_y), 5)
+                pygame.draw.circle(self.canvas, (255,255,0), (conv_x, conv_y), self.fruit_r)
                 pygame.draw.circle(self.canvas, (255,255,0), (conv_x, conv_y), 5 * (self.scale_factor / 10), 1)
             elif fruit == 'orange':
-                pygame.draw.circle(self.canvas, (255,102,0), (conv_x, conv_y), 5)
+                pygame.draw.circle(self.canvas, (255,102,0), (conv_x, conv_y), self.fruit_r)
                 pygame.draw.circle(self.canvas, (255,102,0), (conv_x, conv_y), 5 * (self.scale_factor / 10), 1)
             elif fruit == 'pear':
-                pygame.draw.circle(self.canvas, (0,255,0), (conv_x, conv_y), 5)
+                pygame.draw.circle(self.canvas, (0,255,0), (conv_x, conv_y), self.fruit_r)
                 pygame.draw.circle(self.canvas, (0,255,0), (conv_x, conv_y), 5 * (self.scale_factor / 10), 1)
             elif fruit == 'strawberry':
-                pygame.draw.circle(self.canvas, (255,0,255), (conv_x, conv_y), 5)
+                pygame.draw.circle(self.canvas, (255,0,255), (conv_x, conv_y), self.fruit_r)
                 pygame.draw.circle(self.canvas, (255,0,255), (conv_x, conv_y), 5 * (self.scale_factor / 10), 1)
 
             self.fruit_locs.append((conv_x, conv_y))
@@ -205,6 +180,8 @@ class Game:
         self.waypoints.append(waypoint)
         self.add_text()
 
+        self.path_planning()
+
 
     def remove_waypoint(self, waypoint):
         '''
@@ -260,55 +237,30 @@ class Game:
     Functions for RRT planning from now on
     '''
 
-    def rrt(self, start = np.zeros(2),
-                 goal = np.array([0,0]),
-                 expand_dis = 3.0,
-                 path_resolution = 0.5,
-                 max_points = 200):
+    def path_planning(self):
         '''
         Function for RRT planning
         '''
-        start_pos = self.Node(start[0], start[1])
-        end_pos = self.Node(goal[0], goal[1])
-
-        node_list = [start_pos]
+        # construct obstacles
+        all_obstacles = []
+        for circle in self.fruit_locs:
+            all_obstacles.append(Circle(circle[0], circle[1], self.fruit_r))
+        for marker in self.marker_locs:
+            all_obstacles.append(Rectangle([marker[0], marker[1]], self.marker_size * self.scale_factor, self.marker_size * self.scale_factor))
         
-        while len(node_list) <= max_points:
-            ...
-        return
+        first_path = RRT(start=[self.width/2, self.height/2], goal=self.waypoints[0], width=16, height=10, obstacle_list=all_obstacles,
+                         expand_dis=1, path_resolution=0.5)
+        print(first_path)
+        paths = [first_path]
+        for i in range(len(self.waypoints) - 1):
+            rrt = RRT(start=self.waypoints[i], goal=self.waypoints[i+1], width=16, height=10, obstacle_list=all_obstacles,
+                      expand_dis=1, path_resolution=0.5)
+            paths.append(rrt)
+        print('hello')
+        print(paths[0].node_list)
+        for node in paths[0].node_list:
 
-
-    def is_in_collision_with_points(self, points):
-
-        points_in_collision = []
-
-
-    def is_collision_free(self, new_node):
-        ...
-
-    
-    def get_random_node(self):
-        x = self.width * np.random.random_sample()
-        y = self.height * np.random.random_sample()
-        return self.Node(x, y)
-
-
-    @staticmethod
-    def get_nearest_node_index(node_list, rnd_node):
-
-        dlist = [(node.x - rnd_node.x) ** 2 + (node.y - rnd_node.y)
-                ** 2 for node in node_list]
-        return np.argmin(dlist)
-
-
-    @staticmethod
-    def calc_distance_and_angle(from_node, to_node):
-        dx = to_node.x - from_node.x
-        dy = to_node.y - from_node.y
-        d = math.hypot(dx, dy)
-        theta = math.atan2(dy, dx)
-        return d, theta
-
+            pygame.draw.circle(self.canvas, (0,0,0), (node.x, node.y), 3)
 
 
 if __name__ == '__main__':
