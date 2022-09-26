@@ -7,6 +7,11 @@ import math
 from Obstacle import *
 from rrt import *
 
+from Practical03_Support.path_animation import *
+import meshcat.geometry as g
+import meshcat.transformations as tf
+from ece4078.Utility import StartMeshcat
+
 class Game:
     '''
     Class for waypoint GUI and planning
@@ -34,6 +39,8 @@ class Game:
         # marker size is 70x70mm
         self.marker_size = 0.07
 
+        self.paths = []
+
         pygame.init()
     
         self.font = pygame.font.SysFont('Arial', 25)
@@ -59,6 +66,7 @@ class Game:
                      "aruco9_0": pygame.image.load('pics/8bit/lm_9.png'),
                      "aruco10_0": pygame.image.load('pics/8bit/lm_10.png'),}
 
+
     
     def load(self):
         '''
@@ -69,8 +77,6 @@ class Game:
 
         self.markers = markers
         self.draw_markers()
-        print(self.fruit_locs)
-        print(self.marker_locs)
 
 
     def draw_grid(self):
@@ -187,11 +193,29 @@ class Game:
         '''
         Remove a waypoint if one has been clicked 
         '''
+        ind = self.waypoints.index(waypoint)
         self.waypoints.remove(waypoint)
 
+        self.paths = self.paths[:ind]
+
+        if ind == 0:
+            self.paths.append(self.generate_path((self.width/2, self.height/2), self.waypoints[0]))
+            for i in range(0, len(self.waypoints)-1):
+                self.paths.append(self.generate_path(self.waypoints[i], self.waypoints[i+1]))
+        else:
+            for i in range(ind-1, len(self.waypoints)-1):
+                self.paths.append(self.generate_path(self.waypoints[i], self.waypoints[i+1]))
+        self.draw_paths()
+        
+
+    def reset_canvas(self):
         # reset canvas and redraw points
         self.canvas.fill((255,255,255))
         self.draw_grid()
+
+        for obstacle in self.all_obstacles:
+            pygame.draw.rect(self.canvas, (211,211,211), pygame.Rect(obstacle.origin[0],obstacle.origin[1], obstacle.width, obstacle.height))
+
         self.draw_markers()
         self.draw_waypoints()
         self.add_text()
@@ -214,7 +238,26 @@ class Game:
         '''
 
         self.load()
+
+        with open('baseline.txt', 'r') as f:
+            self.baseline = np.loadtxt(f, delimiter=',')
+        print(self.baseline)
+
+        self.all_obstacles = []
+        # for circle in self.fruit_locs:
+        #     width = self.baseline * self.scale_factor
+        #     self.all_obstacles.append(Rectangle([circle[0] - width/2, circle[1] - width/2], width, width))
+        #     pygame.draw.rect(self.canvas, (211,211,211), pygame.Rect(circle[0] - width/2, circle[1] - width/2, width, width))
+        for marker in self.marker_locs:
+            width = (self.marker_size + self.baseline) * self.scale_factor
+            marker_width = self.marker_size * self.scale_factor
+    
+            self.all_obstacles.append(Rectangle([marker[0] - width/2, marker[1]-width/2], width+marker_width, width+marker_width))
+            
+        self.reset_canvas()
+        
         running = True
+
         while running:
             pygame.display.update()
 
@@ -230,38 +273,55 @@ class Game:
                             else:
                                 self.remove_waypoint(waypoint)
                             self.write_waypoints()
+
+                            pygame.display.set_caption(f'{mouse_pos[0]}, {mouse_pos[1]}')
                     elif event.type == pygame.QUIT:
                         running = False
+
 
     '''
     Functions for RRT planning from now on
     '''
+    def generate_path(self, start, end):
+        rrt = RRT(start=start, 
+                  goal=end, 
+                  width=self.width, 
+                  height=self.height, 
+                  obstacle_list=self.all_obstacles,
+                  expand_dis=100, 
+                  path_resolution=0.1)
+        path = rrt.planning()
+        # vis = StartMeshcat()
+        # vis.delete()
+        # vis.Set2DView(scale = 20, center = [-1, 16, 12, 0])
+        # animate_path_rrt(vis, rrt)
+        # vis.show_inline(height = 500)
+
+        return path
+
+
+    def draw_paths(self):
+
+        self.reset_canvas()
+        for path in self.paths:
+            for i in range(len(path) - 1):
+                pygame.draw.circle(self.canvas, (0,0,0), path[i], 3)
+                pygame.draw.line(self.canvas, (0,0,0), path[i], path[i+1], width = 2)
+            pygame.draw.circle(self.canvas, (0,0,0), path[-1], 3)
+
 
     def path_planning(self):
         '''
         Function for RRT planning
         '''
-        # construct obstacles
-        all_obstacles = []
-        for circle in self.fruit_locs:
-            all_obstacles.append(Circle(circle[0], circle[1], self.fruit_r))
-        for marker in self.marker_locs:
-            all_obstacles.append(Rectangle([marker[0], marker[1]], self.marker_size * self.scale_factor, self.marker_size * self.scale_factor))
         
-        first_path = RRT(start=[self.width/2, self.height/2], goal=self.waypoints[0], width=16, height=10, obstacle_list=all_obstacles,
-                         expand_dis=1, path_resolution=0.5)
-        print(first_path)
-        paths = [first_path]
-        for i in range(len(self.waypoints) - 1):
-            rrt = RRT(start=self.waypoints[i], goal=self.waypoints[i+1], width=16, height=10, obstacle_list=all_obstacles,
-                      expand_dis=1, path_resolution=0.5)
-            paths.append(rrt)
-        print('hello')
-        print(paths[0].node_list)
-        for node in paths[0].node_list:
+        if len(self.paths) == 0:
+            self.paths.append(self.generate_path((self.width/2, self.height/2), self.waypoints[0]))
+            
+        else:
+            self.paths.append(self.generate_path(self.waypoints[-2], self.waypoints[-1]))
 
-            pygame.draw.circle(self.canvas, (0,0,0), (node.x, node.y), 3)
-
+        self.draw_paths()
 
 if __name__ == '__main__':
     import argparse
